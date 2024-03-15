@@ -5,9 +5,8 @@ Made it, as I was tired of repeating the same command everytime I updated some c
 To install, which who really is going to do that but me:
 
 ```
-go install github.com/Majunga/go_watch@v#.#.#
+go install github.com/Majunga/go_watch@v0.0.2
 ```
 
-Where v#.#.# is the version number, I.E v0.0.1
 
 And if your GOPATH is setup correctly, you can now use it anywhere... so bloody easy (and technically a finished project :O)
