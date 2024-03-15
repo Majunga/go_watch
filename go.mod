@@ -1,4 +1,4 @@
-module go_watch
+module github.com/Majunga/go_watch
 
 go 1.22.1
 
