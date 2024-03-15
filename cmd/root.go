@@ -90,10 +90,11 @@ func executeCommand(fullCommand string) {
 		stdout, err := cmd.Output()
 
 		if err != nil {
-			log.Println(err.Error())
+			stdErr := err.(*exec.ExitError)
+			log.Printf("%s", stdErr.Stderr)
 		}
 
-		log.Printf("\n%s", stdout)
+		log.Printf("%s", stdout)
 	}
 }
 
