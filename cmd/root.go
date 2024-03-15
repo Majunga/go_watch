@@ -7,12 +7,14 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/yargevad/filepathx"
 )
+
+var verbose *bool
 
 var rootCmd = &cobra.Command{
 	Use:   "go_watch pattern command\n\n \tpattern: standard glob wildcards such as **/*\n \tcommand: is a single string command, chain commands by using &&\n\n",
@@ -32,7 +34,7 @@ func RootCommandHandler(cmd *cobra.Command, args []string) {
 }
 
 func files_to_watch(pattern string) []file {
-	matches, err := filepath.Glob(pattern)
+	matches, err := filepathx.Glob(pattern)
 
 	if err != nil {
 		log.Fatalf("Invalid Pattern: %s", err)
@@ -43,6 +45,9 @@ func files_to_watch(pattern string) []file {
 
 func watch(pathsToWatch func() []file, command string) {
 	paths := pathsToWatch()
+	if *verbose {
+		log.Printf("Files being watched: %s", paths)
+	}
 
 	go func() {
 		for {
@@ -110,6 +115,18 @@ func map_paths(s []string) []file {
 	mapped := []file{}
 
 	for _, a := range s {
+		stat, err := os.Stat(a)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if stat.IsDir() {
+			if *verbose {
+				log.Printf("Ignoring directory %s", a)
+			}
+			continue
+		}
+
 		hash, err := fileHash(a)
 		if err != nil {
 			log.Fatal(err)
@@ -123,7 +140,7 @@ func map_paths(s []string) []file {
 
 func fileHash(path string) (*string, error) {
 	osFile, err := os.Open(path)
-	if err != nil {
+	if err != nil && os.IsExist(err) {
 		return nil, err
 	}
 
@@ -139,7 +156,13 @@ func fileHash(path string) (*string, error) {
 	return &hash, nil
 }
 
+func Init() {
+	verbose = rootCmd.Flags().BoolP("verbose", "v", false, "Used to print more verbosely to find issues")
+}
+
 func Execute() {
+	Init()
+	log.Println(verbose)
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
