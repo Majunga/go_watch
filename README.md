@@ -10,3 +10,7 @@ go install github.com/Majunga/go_watch@v0.0.3
 
 
 And if your GOPATH is setup correctly, you can now use it anywhere... so bloody easy (and technically a finished project :O)
+
+
+*Example*
+go_watch ./**/* "go test . && go run ."

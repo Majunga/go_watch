@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -24,29 +23,34 @@ var rootCmd = &cobra.Command{
 	Run:   RootCommandHandler,
 }
 
+type CommandHandler struct {
+	*cobra.Command
+}
+
 func RootCommandHandler(cmd *cobra.Command, args []string) {
 	pattern := args[0]
 	command := args[1]
-	log.Printf("Watching %s", pattern)
-	watch(func() []file { return files_to_watch(pattern) }, command)
+	cmd.Printf("Watching %s\n", pattern)
+	cmdhandler := CommandHandler{cmd}
+	cmdhandler.watch(func() []file { return cmdhandler.files_to_watch(pattern) }, command)
 
 	<-make(chan struct{})
 }
 
-func files_to_watch(pattern string) []file {
+func (cmdHandler CommandHandler) files_to_watch(pattern string) []file {
 	matches, err := filepathx.Glob(pattern)
 
 	if err != nil {
-		log.Fatalf("Invalid Pattern: %s", err)
+		cmdHandler.PrintErr(err)
 	}
 
-	return map_paths(matches)
+	return cmdHandler.map_paths(matches)
 }
 
-func watch(pathsToWatch func() []file, command string) {
+func (cmdHandler *CommandHandler) watch(pathsToWatch func() []file, command string) {
 	paths := pathsToWatch()
 	if *verbose {
-		log.Printf("Files being watched: %s", paths)
+		cmdHandler.Printf("Files being watched: %s\n", paths)
 	}
 
 	go func() {
@@ -55,13 +59,13 @@ func watch(pathsToWatch func() []file, command string) {
 			for _, watch := range paths {
 				hash, err := fileHash(watch.path)
 				if err != nil {
-					log.Fatal(err)
+					cmdHandler.PrintErr(err)
 				}
 
 				hashString := *hash
 				if hashString != watch.hash {
-					log.Printf("Path has been modified: %s", watch.path)
-					executeCommand(command)
+					cmdHandler.Printf("Path has been modified: %s\n", watch.path)
+					cmdHandler.executeCommand(command)
 
 					paths = pathsToWatch()
 					break
@@ -73,7 +77,7 @@ func watch(pathsToWatch func() []file, command string) {
 	}()
 }
 
-func executeCommand(fullCommand string) {
+func (commandHandler *CommandHandler) executeCommand(fullCommand string) {
 	commands := strings.Split(fullCommand, "&&")
 
 	for _, command := range commands {
@@ -91,10 +95,10 @@ func executeCommand(fullCommand string) {
 
 		if err != nil {
 			stdErr := err.(*exec.ExitError)
-			log.Printf("%s", stdErr.Stderr)
+			commandHandler.Printf("%s", stdErr.Stderr)
 		}
 
-		log.Printf("%s", stdout)
+		commandHandler.Printf("%s", stdout)
 	}
 }
 
@@ -112,25 +116,25 @@ type file struct {
 	hash string
 }
 
-func map_paths(s []string) []file {
+func (commandHandler CommandHandler) map_paths(s []string) []file {
 	mapped := []file{}
 
 	for _, a := range s {
 		stat, err := os.Stat(a)
 		if err != nil {
-			log.Fatal(err)
+			commandHandler.PrintErr(err)
 		}
 
 		if stat.IsDir() {
 			if *verbose {
-				log.Printf("Ignoring directory %s", a)
+				commandHandler.Printf("Ignoring directory %s\n", a)
 			}
 			continue
 		}
 
 		hash, err := fileHash(a)
 		if err != nil {
-			log.Fatal(err)
+			commandHandler.PrintErr(err)
 		}
 
 		mapped = append(mapped, file{path: a, hash: *hash})
@@ -157,13 +161,11 @@ func fileHash(path string) (*string, error) {
 	return &hash, nil
 }
 
-func Init() {
+func init() {
 	verbose = rootCmd.Flags().BoolP("verbose", "v", false, "Used to print more verbosely to find issues")
 }
 
 func Execute() {
-	Init()
-	log.Println(verbose)
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
