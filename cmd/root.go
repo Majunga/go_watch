@@ -3,6 +3,8 @@ package cmd
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/csv"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -30,7 +32,7 @@ type CommandHandler struct {
 func RootCommandHandler(cmd *cobra.Command, args []string) {
 	pattern := args[0]
 	command := args[1]
-	cmd.Printf("Watching %s\n", pattern)
+	fmt.Printf("Watching %s\n", pattern)
 	cmdhandler := CommandHandler{cmd}
 	cmdhandler.watch(func() []file { return cmdhandler.files_to_watch(pattern) }, command)
 
@@ -49,9 +51,7 @@ func (cmdHandler CommandHandler) files_to_watch(pattern string) []file {
 
 func (cmdHandler *CommandHandler) watch(pathsToWatch func() []file, command string) {
 	paths := pathsToWatch()
-	if *verbose {
-		cmdHandler.Printf("Files being watched: %s\n", paths)
-	}
+	verbosePrintf("Files being watched: %s\n", selectFilePath(paths))
 
 	go func() {
 		for {
@@ -64,7 +64,7 @@ func (cmdHandler *CommandHandler) watch(pathsToWatch func() []file, command stri
 
 				hashString := *hash
 				if hashString != watch.hash {
-					cmdHandler.Printf("Path has been modified: %s\n", watch.path)
+					fmt.Printf("Path has been modified: %s\n", watch.path)
 					cmdHandler.executeCommand(command)
 
 					paths = pathsToWatch()
@@ -77,38 +77,69 @@ func (cmdHandler *CommandHandler) watch(pathsToWatch func() []file, command stri
 	}()
 }
 
+func selectFilePath(s []file) []string {
+	result := []string{}
+
+	for _, a := range s {
+		result = append(result, a.path)
+	}
+
+	return result
+}
+
 func (commandHandler *CommandHandler) executeCommand(fullCommand string) {
 	commands := strings.Split(fullCommand, "&&")
+	fmt.Printf("Executing command: %s\n", fullCommand)
 
 	for _, command := range commands {
-		commandParts := trim(command)
+		commandParts, err := trim(command)
+
+		if err != nil {
+			commandHandler.PrintErr(err)
+			return
+		}
 
 		var cmd *exec.Cmd
+		commandToRun := commandParts[0]
+
+		verbosePrintf("Running command: %s\n", commandToRun)
 		if len(commandParts) > 1 {
 			args := commandParts[1:]
-			cmd = exec.Command(commandParts[0], args...)
+			verbosePrintf("With Arguments: %s\n", args)
+			cmd = exec.Command(commandToRun, args...)
 		} else {
-			cmd = exec.Command(commandParts[0])
+			cmd = exec.Command(commandToRun)
 		}
 
 		stdout, err := cmd.Output()
 
 		if err != nil {
 			stdErr := err.(*exec.ExitError)
-			commandHandler.Printf("%s", stdErr.Stderr)
+			fmt.Printf("%s", stdErr.Stderr)
 		}
 
-		commandHandler.Printf("%s", stdout)
+		fmt.Printf("%s", stdout)
 	}
 }
 
-func trim(commandString string) []string {
+// Splitter splits a string command into command and arguments
+func splitter(s string) ([]string, error) {
+	r := csv.NewReader(strings.NewReader(s))
+	r.Comma = ' ' // space
+	fields, err := r.Read()
+
+	return fields, err
+}
+
+func trim(commandString string) ([]string, error) {
 	result := []string{}
-	for _, s := range strings.Split(strings.TrimSpace(commandString), " ") {
+	splitCommand, err := splitter(strings.TrimSpace(commandString))
+
+	for _, s := range splitCommand {
 		result = append(result, strings.TrimSpace(s))
 	}
 
-	return result
+	return result, err
 }
 
 type file struct {
@@ -126,9 +157,8 @@ func (commandHandler CommandHandler) map_paths(s []string) []file {
 		}
 
 		if stat.IsDir() {
-			if *verbose {
-				commandHandler.Printf("Ignoring directory %s\n", a)
-			}
+			verbosePrintf("Ignoring directory %s\n", a)
+
 			continue
 		}
 
@@ -159,6 +189,12 @@ func fileHash(path string) (*string, error) {
 
 	hash := base64.URLEncoding.EncodeToString(h.Sum(nil))
 	return &hash, nil
+}
+
+func verbosePrintf(format string, i ...interface{}) {
+	if *verbose {
+		fmt.Printf(format, i...)
+	}
 }
 
 func init() {
